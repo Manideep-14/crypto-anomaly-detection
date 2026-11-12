@@ -1,0 +1,18 @@
+Cryptocurrency Trade Anomaly Detection
+Scalability Test - Initial Results
+
+Test 1: One Consumer
+Trades processed: 464
+Duration: 62.29 seconds
+Average throughput: 7.45 trades/sec
+
+Test 2: Two Consumers
+Consumer 1 trades: 358
+Consumer 2 trades: 196
+Combined trades: 554
+Elapsed time: 107.22 seconds
+Approximate combined throughput: 5.17 trades/sec
+
+Note:
+These are preliminary tests with different durations and live input rates.
+They are not a controlled benchmark. No throughput improvement is claimed.

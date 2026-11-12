@@ -1,0 +1,19 @@
+Cryptocurrency Trade Anomaly Detection
+Reliability Test
+
+Test: Coinbase producer stopped and restarted.
+
+Observation:
+- Consumer remained available while waiting for messages.
+- Coinbase producer was restarted.
+- Consumer received and processed trades after restart.
+
+Trades processed after restart: 635
+Average throughput: 14.45 trades/sec
+Average latency: 11646.38 ms
+Maximum latency: 35287.52 ms
+
+Limitation:
+This test verifies producer restart recovery.
+Kafka broker failure and automatic producer reconnection
+have not yet been tested.

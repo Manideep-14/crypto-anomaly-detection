@@ -1,0 +1,45 @@
+CHATGPT PROMPTS USED DURING PROJECT DEVELOPMENT
+
+Project:
+Real-Time Cryptocurrency Trade Anomaly Detection Using Apache Kafka
+
+The following prompts represent the main requests used for AI assistance during project development. They are summarized for documentation.
+
+1. PROJECT DESIGN
+Help me design a real-time cryptocurrency trade anomaly detection system using Apache Kafka, Python, a real-time data source, and a dashboard.
+
+2. REAL-TIME DATA SOURCE
+Explain how to connect to the Coinbase Advanced Trade WebSocket and receive live BTC-USD market trades using Python.
+
+3. KAFKA PRODUCER
+Help implement a Python Kafka producer that publishes live Coinbase BTC-USD trade messages to a Kafka topic.
+
+4. KAFKA CONSUMER
+Help implement a Python Kafka consumer that reads trade messages, calculates trade values, and classifies unusually large trades.
+
+5. ANOMALY DETECTION
+Implement rule-based anomaly detection using the formula trade_value = price * size and a threshold of 5000 USD.
+
+6. SQLITE DATABASE
+Help design a SQLite database to store cryptocurrency trades, including trade ID, product, timestamp, price, size, trade value, anomaly status, and processing metrics.
+
+7. STREAMLIT DASHBOARD
+Help build a Streamlit dashboard showing daily trading statistics, average trade value, anomaly counts, live trades, latency, and throughput.
+
+8. HISTORICAL DATA RECOVERY
+Help implement a recovery mechanism using the Coinbase Exchange REST API to retrieve available missed trades after a producer interruption.
+
+9. IDEMPOTENCY
+Explain and implement duplicate prevention using a composite primary key consisting of product and trade ID, together with SQLite INSERT OR IGNORE.
+
+10. PERFORMANCE EVALUATION
+Help calculate and explain throughput, latency, scalability, reliability, and accuracy for a Kafka-based data streaming pipeline.
+
+11. TESTING AND DEBUGGING
+Help troubleshoot Python, Kafka, Docker, SQLite, and Streamlit errors and verify the project implementation.
+
+12. DOCUMENTATION
+Help prepare README instructions explaining project architecture, installation, execution, recovery, duplicate prevention, and reproducibility.
+
+NOTE:
+AI assistance was used for explanations, implementation guidance, debugging, and documentation. The project was configured, executed, tested, and reviewed by the student.

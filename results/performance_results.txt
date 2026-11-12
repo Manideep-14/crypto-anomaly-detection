@@ -1,0 +1,15 @@
+Cryptocurrency Trade Anomaly Detection
+Clean Performance Test
+
+Total trades processed: 1438
+Test duration: 417.95 seconds
+Average throughput: 3.44 trades/sec
+Average latency: 6.09 ms
+Maximum latency: 28.23 ms
+
+Measurement:
+Latency is measured from producer receipt timestamp
+to consumer processing timestamp.
+
+Note:
+This is an observed test result, not maximum system capacity.
