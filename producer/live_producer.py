@@ -8,12 +8,31 @@ import websocket
 from datetime import datetime, timezone
 from kafka import KafkaProducer
 
+
+# --------------------------------------------------
+# CONFIGURATION
+# --------------------------------------------------
+
 KAFKA_TOPIC = "crypto-trades"
+
 COINBASE_URL = "wss://advanced-trade-ws.coinbase.com"
-HISTORY_URL = "https://api.exchange.coinbase.com/products/BTC-USD/trades"
+
+HISTORY_URL = (
+    "https://api.exchange.coinbase.com/products/BTC-USD/trades"
+)
 
 DB_FILE = "results/crypto_trades.db"
+
 PRODUCT = "BTC-USD"
+
+PAGE_LIMIT = 100
+MAX_PAGES = 1000
+RETRY_SECONDS = 10
+
+
+# --------------------------------------------------
+# KAFKA PRODUCER
+# --------------------------------------------------
 
 producer = KafkaProducer(
     bootstrap_servers="localhost:9092",
@@ -21,8 +40,13 @@ producer = KafkaProducer(
 )
 
 
+# --------------------------------------------------
+# GET LAST PROCESSED TRADE ID
+# --------------------------------------------------
+
 def get_last_processed_trade_id():
     """Read the latest trade already stored by the consumer."""
+
     connection = sqlite3.connect(DB_FILE)
 
     try:
@@ -41,38 +65,75 @@ def get_last_processed_trade_id():
         connection.close()
 
 
+# --------------------------------------------------
+# HISTORICAL TRADE RECOVERY
+# --------------------------------------------------
+
 def recover_missed_trades():
-    """Retrieve available historical trades after the last stored trade."""
+    """
+    Retrieve historical Coinbase trades newer than
+    the last trade stored in SQLite.
+    """
+
     last_id = get_last_processed_trade_id()
 
-    print(f"\nLast processed trade ID: {last_id}")
+    print("\n----------------------------------")
+    print("HISTORICAL TRADE RECOVERY")
+    print("----------------------------------")
+
+    print(f"Last processed trade ID: {last_id}")
     print("Checking Coinbase for missed trades...")
 
     recovered = []
-    params = {"limit": 100}
+    seen_ids = set()
+
+    params = {"limit": PAGE_LIMIT}
+
     reached_checkpoint = False
+    previous_cursor = None
 
     try:
-        for page in range(1000):
+        for page in range(MAX_PAGES):
+
             response = requests.get(
                 HISTORY_URL,
                 params=params,
                 timeout=15
             )
+
             response.raise_for_status()
 
             trades = response.json()
 
             if not trades:
-                break
+                raise RuntimeError(
+                    "No historical trades returned before "
+                    "reaching the saved checkpoint."
+                )
+
+            new_count = 0
 
             for trade in trades:
+
                 trade_id = int(trade["trade_id"])
 
                 if trade_id <= last_id:
                     reached_checkpoint = True
-                else:
+                    continue
+
+                if trade_id not in seen_ids:
+
                     recovered.append(trade)
+
+                    seen_ids.add(trade_id)
+
+                    new_count += 1
+
+            print(
+                f"Page {page + 1}: "
+                f"{len(trades)} received, "
+                f"{new_count} new trades collected"
+            )
 
             if reached_checkpoint:
                 break
@@ -80,20 +141,46 @@ def recover_missed_trades():
             cursor = response.headers.get("CB-AFTER")
 
             if not cursor:
-                break
+                raise RuntimeError(
+                    "Coinbase pagination cursor missing. "
+                    "Cannot confirm recovery."
+                )
+
+            if cursor == previous_cursor:
+                raise RuntimeError(
+                    "Pagination cursor did not advance."
+                )
+
+            previous_cursor = cursor
 
             params = {
-                "limit": 100,
+                "limit": PAGE_LIMIT,
                 "after": cursor
             }
 
             time.sleep(0.1)
 
-        recovered.sort(key=lambda trade: int(trade["trade_id"]))
+        else:
+            raise RuntimeError(
+                f"Maximum page limit ({MAX_PAGES}) reached "
+                "before reaching checkpoint."
+            )
 
-        print(f"Missed trades found: {len(recovered)}")
+        if not reached_checkpoint:
+            raise RuntimeError(
+                "Recovery incomplete: checkpoint not reached."
+            )
 
+        # Sort oldest to newest before publishing.
+        recovered.sort(
+            key=lambda trade: int(trade["trade_id"])
+        )
+
+        print(f"\nMissed trades found: {len(recovered)}")
+
+        # Publish recovered trades to Kafka.
         for trade in recovered:
+
             trade_data = {
                 "source": "Coinbase",
                 "product": PRODUCT,
@@ -102,7 +189,9 @@ def recover_missed_trades():
                 "side": trade.get("side"),
                 "trade_id": str(trade["trade_id"]),
                 "trade_time": trade["time"],
-                "received_at": datetime.now(timezone.utc).isoformat(),
+                "received_at": datetime.now(
+                    timezone.utc
+                ).isoformat(),
                 "recovered": True
             }
 
@@ -113,17 +202,29 @@ def recover_missed_trades():
 
         producer.flush()
 
-        if reached_checkpoint:
-         print("Historical recovery completed. Checkpoint reached.")
-        else:
-         print("WARNING: Recovery incomplete. Checkpoint not reached.")
+        print("Historical recovery completed.")
+        print("Saved checkpoint successfully reached.")
+
+        return True
 
     except Exception as error:
-        print("Historical recovery error:", error)
-        print("The producer will retry after reconnecting.")
 
+        print("\nHistorical recovery error:", error)
+
+        print(
+            "Live streaming will not start "
+            "until recovery succeeds."
+        )
+
+        return False
+
+
+# --------------------------------------------------
+# LIVE WEBSOCKET CONNECTION
+# --------------------------------------------------
 
 def on_open(ws):
+
     print("\nConnected to Coinbase!")
 
     subscription = {
@@ -133,17 +234,25 @@ def on_open(ws):
     }
 
     ws.send(json.dumps(subscription))
+
     print("Subscribed to BTC-USD live trades.")
 
 
+# --------------------------------------------------
+# RECEIVE LIVE TRADES
+# --------------------------------------------------
+
 def on_message(ws, message):
+
     try:
+
         data = json.loads(message)
 
         if data.get("channel") != "market_trades":
             return
 
         for event in data.get("events", []):
+
             for trade in event.get("trades", []):
 
                 trade_data = {
@@ -154,7 +263,9 @@ def on_message(ws, message):
                     "side": trade.get("side"),
                     "trade_id": str(trade["trade_id"]),
                     "trade_time": trade.get("time"),
-                    "received_at": datetime.now(timezone.utc).isoformat(),
+                    "received_at": datetime.now(
+                        timezone.utc
+                    ).isoformat(),
                     "recovered": False
                 }
 
@@ -170,26 +281,54 @@ def on_message(ws, message):
                 )
 
     except Exception as error:
+
         print("Message processing error:", error)
 
 
+# --------------------------------------------------
+# WEBSOCKET ERROR HANDLING
+# --------------------------------------------------
+
 def on_error(ws, error):
+
     print("WebSocket error:", error)
 
 
 def on_close(ws, close_status_code, close_message):
+
     print("Coinbase connection closed.")
 
+    if close_status_code is not None:
+        print("Close status:", close_status_code)
+
+
+# --------------------------------------------------
+# MAIN PROGRAM
+# --------------------------------------------------
 
 if __name__ == "__main__":
 
     print("Starting Coinbase trade producer...")
 
     try:
+
         while True:
 
-            recover_missed_trades()
+            # Recover missed trades before live streaming.
+            recovery_success = recover_missed_trades()
 
+            if not recovery_success:
+
+                print(
+                    f"\nRetrying recovery in "
+                    f"{RETRY_SECONDS} seconds..."
+                )
+
+                time.sleep(RETRY_SECONDS)
+
+                continue
+
+            # Connect to Coinbase live WebSocket.
             ws = websocket.WebSocketApp(
                 COINBASE_URL,
                 on_open=on_open,
@@ -199,6 +338,7 @@ if __name__ == "__main__":
             )
 
             try:
+
                 ws.run_forever(
                     ping_interval=20,
                     ping_timeout=10
@@ -208,16 +348,26 @@ if __name__ == "__main__":
                 raise
 
             except Exception as error:
+
                 print("Connection error:", error)
 
-            print("\nReconnecting to Coinbase in 5 seconds...")
-            time.sleep(5)
+            print(
+                f"\nReconnecting to Coinbase in "
+                f"{RETRY_SECONDS} seconds..."
+            )
+
+            time.sleep(RETRY_SECONDS)
 
     except KeyboardInterrupt:
+
         print("\nStopping producer...")
 
     finally:
+
         producer.flush()
+
         producer.close()
+
         print("Kafka producer closed.")
+
 
